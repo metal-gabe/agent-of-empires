@@ -163,7 +163,7 @@ impl Session {
         }
 
         let size_str = String::from_utf8_lossy(&output.stdout);
-        let parts: Vec<&str> = size_str.trim().split_whitespace().collect();
+        let parts: Vec<&str> = size_str.split_whitespace().collect();
         if parts.len() == 2 {
             let width = parts[0].parse().ok()?;
             let height = parts[1].parse().ok()?;

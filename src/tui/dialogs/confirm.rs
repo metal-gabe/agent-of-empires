@@ -117,3 +117,124 @@ impl ConfirmDialog {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::KeyModifiers;
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn test_default_selection_is_no() {
+        let dialog = ConfirmDialog::new("Test", "Are you sure?", "test_action");
+        assert!(!dialog.selected);
+    }
+
+    #[test]
+    fn test_action_accessor() {
+        let dialog = ConfirmDialog::new("Title", "Message", "delete");
+        assert_eq!(dialog.action(), "delete");
+    }
+
+    #[test]
+    fn test_esc_cancels() {
+        let mut dialog = ConfirmDialog::new("Test", "Message", "action");
+        let result = dialog.handle_key(key(KeyCode::Esc));
+        assert!(matches!(result, DialogResult::Cancel));
+    }
+
+    #[test]
+    fn test_n_cancels() {
+        let mut dialog = ConfirmDialog::new("Test", "Message", "action");
+        let result = dialog.handle_key(key(KeyCode::Char('n')));
+        assert!(matches!(result, DialogResult::Cancel));
+    }
+
+    #[test]
+    fn test_uppercase_n_cancels() {
+        let mut dialog = ConfirmDialog::new("Test", "Message", "action");
+        let result = dialog.handle_key(key(KeyCode::Char('N')));
+        assert!(matches!(result, DialogResult::Cancel));
+    }
+
+    #[test]
+    fn test_y_confirms() {
+        let mut dialog = ConfirmDialog::new("Test", "Message", "action");
+        let result = dialog.handle_key(key(KeyCode::Char('y')));
+        assert!(matches!(result, DialogResult::Submit(())));
+    }
+
+    #[test]
+    fn test_uppercase_y_confirms() {
+        let mut dialog = ConfirmDialog::new("Test", "Message", "action");
+        let result = dialog.handle_key(key(KeyCode::Char('Y')));
+        assert!(matches!(result, DialogResult::Submit(())));
+    }
+
+    #[test]
+    fn test_enter_with_no_selected_cancels() {
+        let mut dialog = ConfirmDialog::new("Test", "Message", "action");
+        let result = dialog.handle_key(key(KeyCode::Enter));
+        assert!(matches!(result, DialogResult::Cancel));
+    }
+
+    #[test]
+    fn test_enter_with_yes_selected_submits() {
+        let mut dialog = ConfirmDialog::new("Test", "Message", "action");
+        dialog.selected = true;
+        let result = dialog.handle_key(key(KeyCode::Enter));
+        assert!(matches!(result, DialogResult::Submit(())));
+    }
+
+    #[test]
+    fn test_tab_toggles_selection() {
+        let mut dialog = ConfirmDialog::new("Test", "Message", "action");
+        assert!(!dialog.selected);
+
+        dialog.handle_key(key(KeyCode::Tab));
+        assert!(dialog.selected);
+
+        dialog.handle_key(key(KeyCode::Tab));
+        assert!(!dialog.selected);
+    }
+
+    #[test]
+    fn test_left_selects_yes() {
+        let mut dialog = ConfirmDialog::new("Test", "Message", "action");
+        dialog.handle_key(key(KeyCode::Left));
+        assert!(dialog.selected);
+    }
+
+    #[test]
+    fn test_right_selects_no() {
+        let mut dialog = ConfirmDialog::new("Test", "Message", "action");
+        dialog.selected = true;
+        dialog.handle_key(key(KeyCode::Right));
+        assert!(!dialog.selected);
+    }
+
+    #[test]
+    fn test_h_selects_yes() {
+        let mut dialog = ConfirmDialog::new("Test", "Message", "action");
+        dialog.handle_key(key(KeyCode::Char('h')));
+        assert!(dialog.selected);
+    }
+
+    #[test]
+    fn test_l_selects_no() {
+        let mut dialog = ConfirmDialog::new("Test", "Message", "action");
+        dialog.selected = true;
+        dialog.handle_key(key(KeyCode::Char('l')));
+        assert!(!dialog.selected);
+    }
+
+    #[test]
+    fn test_unknown_key_continues() {
+        let mut dialog = ConfirmDialog::new("Test", "Message", "action");
+        let result = dialog.handle_key(key(KeyCode::Char('x')));
+        assert!(matches!(result, DialogResult::Continue));
+    }
+}
