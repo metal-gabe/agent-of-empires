@@ -10,7 +10,7 @@ mod welcome;
 
 pub use changelog::ChangelogDialog;
 pub use confirm::ConfirmDialog;
-pub use delete_options::{DeleteOptions, DeleteOptionsDialog};
+pub use delete_options::{DeleteDialogConfig, DeleteOptions, UnifiedDeleteDialog};
 pub use group_delete_options::{GroupDeleteOptions, GroupDeleteOptionsDialog};
 pub use new_session::{NewSessionData, NewSessionDialog};
 pub use rename::RenameDialog;
