@@ -24,11 +24,24 @@ use std::path::PathBuf;
 pub const DEFAULT_PROFILE: &str = "default";
 
 pub fn get_app_dir() -> Result<PathBuf> {
-    let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot find home directory"))?;
-    let dir = home.join(".agent-of-empires");
+    let dir = get_app_dir_path()?;
     if !dir.exists() {
         fs::create_dir_all(&dir)?;
     }
+    Ok(dir)
+}
+
+fn get_app_dir_path() -> Result<PathBuf> {
+    #[cfg(target_os = "linux")]
+    let dir = dirs::config_dir()
+        .ok_or_else(|| anyhow::anyhow!("Cannot find config directory"))?
+        .join("agent-of-empires");
+
+    #[cfg(not(target_os = "linux"))]
+    let dir = dirs::home_dir()
+        .ok_or_else(|| anyhow::anyhow!("Cannot find home directory"))?
+        .join(".agent-of-empires");
+
     Ok(dir)
 }
 
