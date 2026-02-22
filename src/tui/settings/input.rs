@@ -499,6 +499,11 @@ impl SettingsView {
                     s.yolo_mode_default = None;
                 }
             }
+            FieldKey::RememberSortOrder => {
+                if let Some(ref mut s) = config.session {
+                    s.remember_sort_order = None;
+                }
+            }
             FieldKey::DefaultTerminalMode => {
                 if let Some(ref mut s) = config.sandbox {
                     s.default_terminal_mode = None;

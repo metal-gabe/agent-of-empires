@@ -49,7 +49,6 @@ Thumbs.db
 sdd-*/
 
 # Personal/local files
-.editorconfig
 *.screenstudio/
 
 debug.log

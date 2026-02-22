@@ -5,6 +5,7 @@ use tui_input::backend::crossterm::EventHandler;
 use tui_input::Input;
 
 use super::{HomeView, TerminalMode, ViewMode};
+use crate::session::config::{load_config, save_config};
 use crate::session::{flatten_tree, list_profiles, repo_config, resolve_config, Item, Status};
 use crate::tui::app::Action;
 use crate::tui::dialogs::{
@@ -479,6 +480,22 @@ impl HomeView {
                     }
                 }
             }
+            KeyCode::Char('o') => {
+                self.sort_order = self.sort_order.cycle();
+                self.flat_items = flatten_tree(&self.group_tree, &self.instances, self.sort_order);
+                self.cursor = self.cursor.min(self.flat_items.len().saturating_sub(1));
+                self.update_selected();
+
+                // Persist sort order if remember_sort_order is enabled
+                if let Ok(mut config) = load_config().map(|c| c.unwrap_or_default()) {
+                    if config.session.remember_sort_order {
+                        config.app_state.sort_order = Some(self.sort_order);
+                        if let Err(e) = save_config(&config) {
+                            tracing::warn!("Failed to save sort order: {}", e);
+                        }
+                    }
+                }
+            }
             KeyCode::Up | KeyCode::Char('k') => {
                 self.move_cursor(-1);
             }
@@ -608,7 +625,7 @@ impl HomeView {
 
     fn toggle_group_collapsed(&mut self, path: &str) {
         self.group_tree.toggle_collapsed(path);
-        self.flat_items = flatten_tree(&self.group_tree, &self.instances);
+        self.flat_items = flatten_tree(&self.group_tree, &self.instances, self.sort_order);
         if let Err(e) = self
             .storage
             .save_with_groups(&self.instances, &self.group_tree)

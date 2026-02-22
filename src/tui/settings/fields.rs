@@ -68,6 +68,7 @@ pub enum FieldKey {
     Mouse,
     // Session
     DefaultTool,
+    RememberSortOrder,
     // Sound
     SoundEnabled,
     SoundMode,
@@ -611,6 +612,12 @@ fn build_session_fields(
         session.and_then(|s| s.yolo_mode_default),
     );
 
+    let (remember_sort_order, remember_sort_override) = resolve_value(
+        scope,
+        global.session.remember_sort_order,
+        session.and_then(|s| s.remember_sort_order),
+    );
+
     vec![
         SettingField {
             key: FieldKey::DefaultTool,
@@ -627,6 +634,14 @@ fn build_session_fields(
             value: FieldValue::Bool(yolo_mode_default),
             category: SettingsCategory::Session,
             has_override: yolo_override,
+        },
+        SettingField {
+            key: FieldKey::RememberSortOrder,
+            label: "Remember Sort Order",
+            description: "Remember the session list sort order across restarts",
+            value: FieldValue::Bool(remember_sort_order),
+            category: SettingsCategory::Session,
+            has_override: remember_sort_override,
         },
     ]
 }
@@ -870,6 +885,9 @@ fn apply_field_to_global(field: &SettingField, config: &mut Config) {
         (FieldKey::DefaultTool, FieldValue::Select { selected, .. }) => {
             config.session.default_tool =
                 crate::agents::name_from_settings_index(*selected).map(|s| s.to_string());
+        }
+        (FieldKey::RememberSortOrder, FieldValue::Bool(v)) => {
+            config.session.remember_sort_order = *v
         }
         // Sound
         (FieldKey::SoundEnabled, FieldValue::Bool(v)) => config.sound.enabled = *v,
@@ -1134,6 +1152,14 @@ fn apply_field_to_profile(field: &SettingField, global: &Config, config: &mut Pr
                 &global.session.yolo_mode_default,
                 &mut config.session,
                 |s, val| s.yolo_mode_default = val,
+            );
+        }
+        (FieldKey::RememberSortOrder, FieldValue::Bool(v)) => {
+            set_or_clear_override(
+                *v,
+                &global.session.remember_sort_order,
+                &mut config.session,
+                |s, val| s.remember_sort_order = val,
             );
         }
         // Sound

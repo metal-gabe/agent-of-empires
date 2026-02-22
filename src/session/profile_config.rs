@@ -150,6 +150,9 @@ pub struct SessionConfigOverride {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub yolo_mode_default: Option<bool>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remember_sort_order: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -302,6 +305,9 @@ pub fn apply_session_overrides(
     }
     if let Some(yolo_mode_default) = source.yolo_mode_default {
         target.yolo_mode_default = yolo_mode_default;
+    }
+    if let Some(remember_sort_order) = source.remember_sort_order {
+        target.remember_sort_order = remember_sort_order;
     }
 }
 

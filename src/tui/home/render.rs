@@ -586,6 +586,13 @@ impl HomeView {
             }
         }
 
+        let sort_label = format!(" Sort:{} ", self.sort_order.label());
+        spans.extend([
+            Span::styled("│", sep_style),
+            Span::styled(" o", key_style),
+            Span::styled(sort_label, desc_style),
+        ]);
+
         spans.extend([
             Span::styled("│", sep_style),
             Span::styled(" n", key_style),

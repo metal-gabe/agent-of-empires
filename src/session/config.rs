@@ -47,6 +47,34 @@ pub struct Config {
     pub app_state: AppStateConfig,
 }
 
+/// Session list sort order
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SortOrder {
+    #[default]
+    None,
+    AZ,
+    ZA,
+}
+
+impl SortOrder {
+    pub fn cycle(self) -> Self {
+        match self {
+            SortOrder::None => SortOrder::AZ,
+            SortOrder::AZ => SortOrder::ZA,
+            SortOrder::ZA => SortOrder::None,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            SortOrder::None => "None",
+            SortOrder::AZ => "A-Z",
+            SortOrder::ZA => "Z-A",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AppStateConfig {
     #[serde(default)]
@@ -63,6 +91,9 @@ pub struct AppStateConfig {
 
     #[serde(default)]
     pub has_seen_custom_instruction_warning: bool,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sort_order: Option<SortOrder>,
 }
 
 /// Session-related configuration defaults
@@ -76,6 +107,10 @@ pub struct SessionConfig {
     /// Enable YOLO mode by default for new sessions (skip permission prompts)
     #[serde(default)]
     pub yolo_mode_default: bool,
+
+    /// Remember session list sort order across restarts
+    #[serde(default)]
+    pub remember_sort_order: bool,
 }
 
 /// Diff view configuration

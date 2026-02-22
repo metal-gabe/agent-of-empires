@@ -1,6 +1,6 @@
 edition = "2021"
 
-# Line length -- codebase uses 100 (rustfmt default is 89)
+# Line length -- codebase uses 100 (matches rustfmt default)
 max_width = 100
 
 # Indentation: 4 spaces
