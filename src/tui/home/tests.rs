@@ -77,6 +77,37 @@ fn create_test_env_with_groups() -> TestEnv {
     TestEnv { _temp: temp, view }
 }
 
+fn create_test_env_with_mixed_sessions() -> TestEnv {
+    use crate::session::GroupTree;
+
+    let temp = TempDir::new().unwrap();
+    setup_test_home(&temp);
+    let storage = Storage::new("test").unwrap();
+    let mut instances = Vec::new();
+
+    let inst_ungrouped = Instance::new("Uncategorized", "/tmp/u");
+    instances.push(inst_ungrouped);
+
+    let mut inst1 = Instance::new("Zebra", "/tmp/z");
+    inst1.group_path = "work".to_string();
+    instances.push(inst1);
+
+    let mut inst2 = Instance::new("Mango", "/tmp/m");
+    inst2.group_path = "work".to_string();
+    instances.push(inst2);
+
+    let mut inst3 = Instance::new("Apple", "/tmp/a");
+    inst3.group_path = "work".to_string();
+    instances.push(inst3);
+
+    let group_tree = GroupTree::new_with_groups(&instances, &[]);
+    storage.save_with_groups(&instances, &group_tree).unwrap();
+
+    let tools = AvailableTools::with_tools(&["claude"]);
+    let view = HomeView::new(storage, tools).unwrap();
+    TestEnv { _temp: temp, view }
+}
+
 #[test]
 #[serial]
 fn test_initial_cursor_position() {
@@ -1232,4 +1263,161 @@ fn test_uppercase_l_grows_list() {
     assert_eq!(env.view.list_width, 35);
     env.view.handle_key(key(KeyCode::Char('L')));
     assert_eq!(env.view.list_width, 40);
+}
+
+#[test]
+#[serial]
+fn test_sort_order_defaults_to_none() {
+    use crate::session::config::SortOrder;
+
+    let env = create_test_env_with_mixed_sessions();
+    assert_eq!(env.view.sort_order, SortOrder::None);
+}
+
+#[test]
+#[serial]
+fn test_o_key_cycles_sort_order_forward() {
+    use crate::session::config::SortOrder;
+
+    let mut env = create_test_env_with_mixed_sessions();
+    assert_eq!(env.view.sort_order, SortOrder::None);
+
+    env.view.handle_key(key(KeyCode::Char('o')));
+    assert_eq!(env.view.sort_order, SortOrder::AZ);
+
+    env.view.handle_key(key(KeyCode::Char('o')));
+    assert_eq!(env.view.sort_order, SortOrder::ZA);
+
+    env.view.handle_key(key(KeyCode::Char('o')));
+    assert_eq!(env.view.sort_order, SortOrder::None);
+}
+
+#[test]
+#[serial]
+fn test_o_key_flat_items_sorted_az() {
+    use crate::session::config::SortOrder;
+
+    let mut env = create_test_env_with_mixed_sessions();
+    assert_eq!(env.view.sort_order, SortOrder::None);
+
+    env.view.handle_key(key(KeyCode::Char('o')));
+    assert_eq!(env.view.sort_order, SortOrder::AZ);
+
+    let mut session_titles: Vec<_> = Vec::new();
+    let mut in_work_group = false;
+    for item in &env.view.flat_items {
+        match item {
+            Item::Group { name, .. } => {
+                if name == "work" {
+                    in_work_group = true;
+                } else {
+                    in_work_group = false;
+                }
+            }
+            Item::Session { id, .. } => {
+                if in_work_group {
+                    if let Some(inst) = env.view.instance_map.get(id) {
+                        session_titles.push(inst.title.as_str());
+                    }
+                }
+            }
+        }
+    }
+
+    assert_eq!(session_titles, vec!["Apple", "Mango", "Zebra"]);
+}
+
+#[test]
+#[serial]
+fn test_o_key_flat_items_sorted_za() {
+    use crate::session::config::SortOrder;
+
+    let mut env = create_test_env_with_mixed_sessions();
+
+    env.view.handle_key(key(KeyCode::Char('o')));
+    env.view.handle_key(key(KeyCode::Char('o')));
+    assert_eq!(env.view.sort_order, SortOrder::ZA);
+
+    let mut session_titles: Vec<_> = Vec::new();
+    let mut in_work_group = false;
+    for item in &env.view.flat_items {
+        match item {
+            Item::Group { name, .. } => {
+                if name == "work" {
+                    in_work_group = true;
+                } else {
+                    in_work_group = false;
+                }
+            }
+            Item::Session { id, .. } => {
+                if in_work_group {
+                    if let Some(inst) = env.view.instance_map.get(id) {
+                        session_titles.push(inst.title.as_str());
+                    }
+                }
+            }
+        }
+    }
+
+    assert_eq!(session_titles, vec!["Zebra", "Mango", "Apple"]);
+}
+
+#[test]
+#[serial]
+fn test_o_key_flat_items_none_preserves_insertion_order() {
+    use crate::session::config::SortOrder;
+
+    let mut env = create_test_env_with_mixed_sessions();
+
+    env.view.handle_key(key(KeyCode::Char('o')));
+    env.view.handle_key(key(KeyCode::Char('o')));
+    env.view.handle_key(key(KeyCode::Char('o')));
+    assert_eq!(env.view.sort_order, SortOrder::None);
+
+    let mut session_titles: Vec<_> = Vec::new();
+    let mut in_work_group = false;
+    for item in &env.view.flat_items {
+        match item {
+            Item::Group { name, .. } => {
+                if name == "work" {
+                    in_work_group = true;
+                } else {
+                    in_work_group = false;
+                }
+            }
+            Item::Session { id, .. } => {
+                if in_work_group {
+                    if let Some(inst) = env.view.instance_map.get(id) {
+                        session_titles.push(inst.title.as_str());
+                    }
+                }
+            }
+        }
+    }
+
+    assert_eq!(session_titles, vec!["Zebra", "Mango", "Apple"]);
+}
+
+#[test]
+#[serial]
+fn test_o_key_clamps_cursor_when_list_shrinks() {
+    use crate::session::config::SortOrder;
+    use tui_input::Input;
+
+    let mut env = create_test_env_with_mixed_sessions();
+    let initial_items = env.view.flat_items.len();
+
+    env.view.cursor = initial_items - 1;
+    assert_eq!(env.view.cursor, initial_items - 1);
+
+    env.view.search_query = Input::new("work".to_string());
+    env.view.update_filter();
+    let filtered_count = env.view.filtered_items.as_ref().unwrap().len();
+    assert!(filtered_count < initial_items);
+
+    env.view.handle_key(key(KeyCode::Char('o')));
+    assert_eq!(env.view.sort_order, SortOrder::AZ);
+
+    let valid_max = env.view.flat_items.len().saturating_sub(1);
+    assert!(env.view.cursor <= valid_max);
 }
