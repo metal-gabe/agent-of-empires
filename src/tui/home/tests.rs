@@ -1297,6 +1297,32 @@ fn test_o_key_cycles_sort_order_forward() {
 
 #[test]
 #[serial]
+fn test_ctrl_o_key_cycles_sort_order_backward() {
+    use crate::session::config::SortOrder;
+
+    let mut env = create_test_env_with_mixed_sessions();
+    assert_eq!(env.view.sort_order, SortOrder::Oldest);
+
+    // Ctrl+o cycles backward: Oldest -> ZA -> AZ -> Newest -> Oldest
+    env.view
+        .handle_key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL));
+    assert_eq!(env.view.sort_order, SortOrder::ZA);
+
+    env.view
+        .handle_key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL));
+    assert_eq!(env.view.sort_order, SortOrder::AZ);
+
+    env.view
+        .handle_key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL));
+    assert_eq!(env.view.sort_order, SortOrder::Newest);
+
+    env.view
+        .handle_key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL));
+    assert_eq!(env.view.sort_order, SortOrder::Oldest);
+}
+
+#[test]
+#[serial]
 fn test_o_key_flat_items_sorted_az() {
     use crate::session::config::SortOrder;
 
@@ -1339,7 +1365,7 @@ fn test_o_key_flat_items_sorted_za() {
 
     let mut env = create_test_env_with_mixed_sessions();
 
-    // Press 'o' three times to get to ZA (None -> Newest -> AZ -> ZA)
+    // Press 'o' three times to get to ZA (Oldest -> Newest -> AZ -> ZA)
     env.view.handle_key(key(KeyCode::Char('o')));
     env.view.handle_key(key(KeyCode::Char('o')));
     env.view.handle_key(key(KeyCode::Char('o')));

@@ -43,8 +43,8 @@ fn shortcuts() -> Vec<(&'static str, Vec<(&'static str, &'static str)>)> {
                 ("c", "Toggle container/host (sandbox)"),
                 ("D", "Diff view (git changes)"),
                 ("H/L", "Resize list panel"),
-                ("o", "Cycle sort order"),
-                ("Ctrl+o", "Cycle sort (reverse)"),
+                ("o", "Cycle sort forward"),
+                ("Ctrl+o", "Cycle sort backward"),
             ],
         ),
         (
