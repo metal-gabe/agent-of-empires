@@ -52,7 +52,8 @@ pub struct Config {
 #[serde(rename_all = "snake_case")]
 pub enum SortOrder {
     #[default]
-    None,
+    Oldest,
+    Newest,
     AZ,
     ZA,
 }
@@ -60,15 +61,26 @@ pub enum SortOrder {
 impl SortOrder {
     pub fn cycle(self) -> Self {
         match self {
-            SortOrder::None => SortOrder::AZ,
+            SortOrder::Oldest => SortOrder::Newest,
+            SortOrder::Newest => SortOrder::AZ,
             SortOrder::AZ => SortOrder::ZA,
-            SortOrder::ZA => SortOrder::None,
+            SortOrder::ZA => SortOrder::Oldest,
+        }
+    }
+
+    pub fn cycle_reverse(self) -> Self {
+        match self {
+            SortOrder::Oldest => SortOrder::ZA,
+            SortOrder::Newest => SortOrder::Oldest,
+            SortOrder::AZ => SortOrder::Newest,
+            SortOrder::ZA => SortOrder::AZ,
         }
     }
 
     pub fn label(self) -> &'static str {
         match self {
-            SortOrder::None => "None",
+            SortOrder::Oldest => "Oldest",
+            SortOrder::Newest => "Newest",
             SortOrder::AZ => "A-Z",
             SortOrder::ZA => "Z-A",
         }

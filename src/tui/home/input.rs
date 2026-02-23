@@ -480,6 +480,22 @@ impl HomeView {
                     }
                 }
             }
+            KeyCode::Char('o') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.sort_order = self.sort_order.cycle_reverse();
+                self.flat_items = flatten_tree(&self.group_tree, &self.instances, self.sort_order);
+                self.cursor = self.cursor.min(self.flat_items.len().saturating_sub(1));
+                self.update_selected();
+
+                // Persist sort order if remember_sort_order is enabled
+                if let Ok(mut config) = load_config().map(|c| c.unwrap_or_default()) {
+                    if config.session.remember_sort_order {
+                        config.app_state.sort_order = Some(self.sort_order);
+                        if let Err(e) = save_config(&config) {
+                            tracing::warn!("Failed to save sort order: {}", e);
+                        }
+                    }
+                }
+            }
             KeyCode::Char('o') => {
                 self.sort_order = self.sort_order.cycle();
                 self.flat_items = flatten_tree(&self.group_tree, &self.instances, self.sort_order);
