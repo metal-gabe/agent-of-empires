@@ -52,7 +52,7 @@ name = "phosphor"   # phosphor, tokyo-night-storm, catppuccin-latte
 
 ```toml
 [session]
-default_tool = "claude"   # claude, opencode, vibe, codex, gemini
+default_tool = "claude"   # claude, opencode, vibe, codex, gemini, cursor
 yolo_mode_default = false
 ```
 
