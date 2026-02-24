@@ -119,10 +119,6 @@ pub struct SessionConfig {
     /// Enable YOLO mode by default for new sessions (skip permission prompts)
     #[serde(default)]
     pub yolo_mode_default: bool,
-
-    /// Remember session list sort order across restarts
-    #[serde(default)]
-    pub remember_sort_order: bool,
 }
 
 /// Diff view configuration

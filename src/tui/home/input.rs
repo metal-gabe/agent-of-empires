@@ -486,13 +486,10 @@ impl HomeView {
                 self.cursor = self.cursor.min(self.flat_items.len().saturating_sub(1));
                 self.update_selected();
 
-                // Persist sort order if remember_sort_order is enabled
                 if let Ok(mut config) = load_config().map(|c| c.unwrap_or_default()) {
-                    if config.session.remember_sort_order {
-                        config.app_state.sort_order = Some(self.sort_order);
-                        if let Err(e) = save_config(&config) {
-                            tracing::warn!("Failed to save sort order: {}", e);
-                        }
+                    config.app_state.sort_order = Some(self.sort_order);
+                    if let Err(e) = save_config(&config) {
+                        tracing::warn!("Failed to save sort order: {}", e);
                     }
                 }
             }
@@ -502,13 +499,10 @@ impl HomeView {
                 self.cursor = self.cursor.min(self.flat_items.len().saturating_sub(1));
                 self.update_selected();
 
-                // Persist sort order if remember_sort_order is enabled
                 if let Ok(mut config) = load_config().map(|c| c.unwrap_or_default()) {
-                    if config.session.remember_sort_order {
-                        config.app_state.sort_order = Some(self.sort_order);
-                        if let Err(e) = save_config(&config) {
-                            tracing::warn!("Failed to save sort order: {}", e);
-                        }
+                    config.app_state.sort_order = Some(self.sort_order);
+                    if let Err(e) = save_config(&config) {
+                        tracing::warn!("Failed to save sort order: {}", e);
                     }
                 }
             }
