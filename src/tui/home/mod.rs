@@ -197,7 +197,6 @@ impl HomeView {
         let user_config = load_config().ok().flatten();
         let sort_order = user_config
             .as_ref()
-            // .filter(|c| c.session.remember_sort_order)
             .and_then(|c| c.app_state.sort_order)
             .unwrap_or_default();
 

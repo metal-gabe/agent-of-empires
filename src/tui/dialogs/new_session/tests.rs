@@ -604,7 +604,6 @@ fn test_profile_override_sets_default_tool() {
         session: Some(SessionConfigOverride {
             default_tool: Some("opencode".to_string()),
             yolo_mode_default: None,
-            remember_sort_order: None,
         }),
         ..Default::default()
     };
@@ -632,7 +631,6 @@ fn test_profile_override_beats_global_default_tool() {
         session: Some(SessionConfigOverride {
             default_tool: Some("opencode".to_string()),
             yolo_mode_default: None,
-            remember_sort_order: None,
         }),
         ..Default::default()
     };
