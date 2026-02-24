@@ -1267,11 +1267,11 @@ fn test_uppercase_l_grows_list() {
 
 #[test]
 #[serial]
-fn test_sort_order_defaults_to_oldest() {
+fn test_sort_order_defaults_to_newest() {
     use crate::session::config::SortOrder;
 
     let env = create_test_env_with_mixed_sessions();
-    assert_eq!(env.view.sort_order, SortOrder::Oldest);
+    assert_eq!(env.view.sort_order, SortOrder::Newest);
 }
 
 #[test]
@@ -1280,10 +1280,10 @@ fn test_o_key_cycles_sort_order_forward() {
     use crate::session::config::SortOrder;
 
     let mut env = create_test_env_with_mixed_sessions();
-    assert_eq!(env.view.sort_order, SortOrder::Oldest);
+    assert_eq!(env.view.sort_order, SortOrder::Newest);
 
     env.view.handle_key(key(KeyCode::Char('o')));
-    assert_eq!(env.view.sort_order, SortOrder::Newest);
+    assert_eq!(env.view.sort_order, SortOrder::Oldest);
 
     env.view.handle_key(key(KeyCode::Char('o')));
     assert_eq!(env.view.sort_order, SortOrder::AZ);
@@ -1292,7 +1292,7 @@ fn test_o_key_cycles_sort_order_forward() {
     assert_eq!(env.view.sort_order, SortOrder::ZA);
 
     env.view.handle_key(key(KeyCode::Char('o')));
-    assert_eq!(env.view.sort_order, SortOrder::Oldest);
+    assert_eq!(env.view.sort_order, SortOrder::Newest);
 }
 
 #[test]
@@ -1301,7 +1301,7 @@ fn test_ctrl_o_key_cycles_sort_order_backward() {
     use crate::session::config::SortOrder;
 
     let mut env = create_test_env_with_mixed_sessions();
-    assert_eq!(env.view.sort_order, SortOrder::Oldest);
+    assert_eq!(env.view.sort_order, SortOrder::Newest);
 
     // Ctrl+o cycles backward: Oldest -> ZA -> AZ -> Newest -> Oldest
     env.view
@@ -1314,11 +1314,11 @@ fn test_ctrl_o_key_cycles_sort_order_backward() {
 
     env.view
         .handle_key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL));
-    assert_eq!(env.view.sort_order, SortOrder::Newest);
+    assert_eq!(env.view.sort_order, SortOrder::Oldest);
 
     env.view
         .handle_key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL));
-    assert_eq!(env.view.sort_order, SortOrder::Oldest);
+    assert_eq!(env.view.sort_order, SortOrder::Newest);
 }
 
 #[test]
@@ -1327,9 +1327,9 @@ fn test_o_key_flat_items_sorted_az() {
     use crate::session::config::SortOrder;
 
     let mut env = create_test_env_with_mixed_sessions();
-    assert_eq!(env.view.sort_order, SortOrder::Oldest);
+    assert_eq!(env.view.sort_order, SortOrder::Newest);
 
-    // Press 'o' twice to get to AZ (Oldest -> Newest -> AZ)
+    // Press 'o' twice to get to AZ (Newest -> Oldest -> AZ)
     env.view.handle_key(key(KeyCode::Char('o')));
     env.view.handle_key(key(KeyCode::Char('o')));
     assert_eq!(env.view.sort_order, SortOrder::AZ);
@@ -1397,17 +1397,17 @@ fn test_o_key_flat_items_sorted_za() {
 
 #[test]
 #[serial]
-fn test_o_key_flat_items_oldest_preserves_insertion_order() {
+fn test_o_key_flat_items_newest_preserves_insertion_order() {
     use crate::session::config::SortOrder;
 
     let mut env = create_test_env_with_mixed_sessions();
 
-    // Press 'o' four times to wrap back to Oldest (Oldest -> Newest -> AZ -> ZA -> Oldest)
+    // Press 'o' four times to wrap back to Newest (Newest -> Oldest -> AZ -> ZA -> Newest)
     env.view.handle_key(key(KeyCode::Char('o')));
     env.view.handle_key(key(KeyCode::Char('o')));
     env.view.handle_key(key(KeyCode::Char('o')));
     env.view.handle_key(key(KeyCode::Char('o')));
-    assert_eq!(env.view.sort_order, SortOrder::Oldest);
+    assert_eq!(env.view.sort_order, SortOrder::Newest);
 
     let mut session_titles: Vec<_> = Vec::new();
     let mut in_work_group = false;
@@ -1430,7 +1430,7 @@ fn test_o_key_flat_items_oldest_preserves_insertion_order() {
         }
     }
 
-    assert_eq!(session_titles, vec!["Zebra", "Mango", "Apple"]);
+    assert_eq!(session_titles, vec!["Apple", "Mango", "Zebra"]);
 }
 
 #[test]
@@ -1451,7 +1451,7 @@ fn test_o_key_clamps_cursor_when_list_shrinks() {
     assert!(filtered_count < initial_items);
 
     env.view.handle_key(key(KeyCode::Char('o')));
-    assert_eq!(env.view.sort_order, SortOrder::Newest);
+    assert_eq!(env.view.sort_order, SortOrder::Oldest);
 
     let valid_max = env.view.flat_items.len().saturating_sub(1);
     assert!(env.view.cursor <= valid_max);

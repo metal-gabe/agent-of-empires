@@ -712,10 +712,10 @@ mod tests {
 
     #[test]
     fn test_sort_order_cycle() {
-        assert_eq!(SortOrder::Oldest.cycle(), SortOrder::Newest);
-        assert_eq!(SortOrder::Newest.cycle(), SortOrder::AZ);
+        assert_eq!(SortOrder::Newest.cycle(), SortOrder::Oldest);
+        assert_eq!(SortOrder::Oldest.cycle(), SortOrder::AZ);
         assert_eq!(SortOrder::AZ.cycle(), SortOrder::ZA);
-        assert_eq!(SortOrder::ZA.cycle(), SortOrder::Oldest);
+        assert_eq!(SortOrder::ZA.cycle(), SortOrder::Newest);
     }
 
     #[test]
