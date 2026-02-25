@@ -36,6 +36,15 @@ impl HomeView {
                         self.settings_view = None;
                         self.confirm_dialog = None;
                         self.settings_close_confirm = false;
+                        // Revert theme to saved config (undo any preview)
+                        if let Ok(config) = resolve_config(self.storage.profile()) {
+                            let theme_name = if config.theme.name.is_empty() {
+                                "phosphor".to_string()
+                            } else {
+                                config.theme.name
+                            };
+                            return Some(Action::SetTheme(theme_name));
+                        }
                         return None;
                     }
                 }
@@ -45,11 +54,22 @@ impl HomeView {
         // Handle settings view (full-screen takeover)
         if let Some(ref mut settings) = self.settings_view {
             match settings.handle_key(key) {
-                SettingsAction::Continue => return None,
+                SettingsAction::Continue => {
+                    return None;
+                }
                 SettingsAction::Close => {
                     self.settings_view = None;
                     // Refresh config-dependent state in case settings changed
                     self.refresh_from_config();
+                    // Reload theme from saved config
+                    if let Ok(config) = resolve_config(self.storage.profile()) {
+                        let theme_name = if config.theme.name.is_empty() {
+                            "phosphor".to_string()
+                        } else {
+                            config.theme.name
+                        };
+                        return Some(Action::SetTheme(theme_name));
+                    }
                     return None;
                 }
                 SettingsAction::UnsavedChangesWarning => {
@@ -61,6 +81,9 @@ impl HomeView {
                     ));
                     self.settings_close_confirm = true;
                     return None;
+                }
+                SettingsAction::PreviewTheme(name) => {
+                    return Some(Action::SetTheme(name));
                 }
             }
         }
@@ -211,6 +234,7 @@ impl HomeView {
                 DialogResult::Continue => {}
                 DialogResult::Cancel => {
                     self.confirm_dialog = None;
+                    self.pending_stop_session = None;
                 }
                 DialogResult::Submit(_) => {
                     let action = dialog.action().to_string();
@@ -218,6 +242,10 @@ impl HomeView {
                     if action == "delete_group" {
                         if let Err(e) = self.delete_selected_group() {
                             tracing::error!("Failed to delete group: {}", e);
+                        }
+                    } else if action == "stop_session" {
+                        if let Some(session_id) = self.pending_stop_session.take() {
+                            return Some(Action::StopSession(session_id));
                         }
                     }
                 }
@@ -287,15 +315,19 @@ impl HomeView {
                 KeyCode::Esc => {
                     self.search_active = false;
                     self.search_query = Input::default();
-                    self.filtered_items = None;
+                    self.search_matches.clear();
+                    self.search_match_index = 0;
                 }
                 KeyCode::Enter => {
                     self.search_active = false;
+                    self.search_query = Input::default();
+                    self.search_matches.clear();
+                    self.search_match_index = 0;
                 }
                 _ => {
                     self.search_query
                         .handle_event(&crossterm::event::Event::Key(key));
-                    self.update_filter();
+                    self.update_search();
                 }
             }
             return None;
@@ -303,6 +335,13 @@ impl HomeView {
 
         // Normal mode keybindings
         match key.code {
+            KeyCode::Esc => {
+                if !self.search_matches.is_empty() {
+                    self.search_matches.clear();
+                    self.search_match_index = 0;
+                    self.search_query = Input::default();
+                }
+            }
             KeyCode::Char('q') => return Some(Action::Quit),
             KeyCode::Char('?') => {
                 self.show_help = true;
@@ -341,20 +380,38 @@ impl HomeView {
                 self.search_query = Input::default();
             }
             KeyCode::Char('n') => {
-                let existing_titles: Vec<String> =
-                    self.instances.iter().map(|i| i.title.clone()).collect();
-                let existing_groups: Vec<String> = self
-                    .group_tree
-                    .get_all_groups()
-                    .iter()
-                    .map(|g| g.path.clone())
-                    .collect();
-                self.new_dialog = Some(NewSessionDialog::new(
-                    self.available_tools.clone(),
-                    existing_titles,
-                    existing_groups,
-                    self.storage.profile(),
-                ));
+                if !self.search_matches.is_empty() {
+                    self.search_match_index =
+                        (self.search_match_index + 1) % self.search_matches.len();
+                    self.cursor = self.search_matches[self.search_match_index];
+                    self.update_selected();
+                } else {
+                    let existing_titles: Vec<String> =
+                        self.instances.iter().map(|i| i.title.clone()).collect();
+                    let existing_groups: Vec<String> = self
+                        .group_tree
+                        .get_all_groups()
+                        .iter()
+                        .map(|g| g.path.clone())
+                        .collect();
+                    self.new_dialog = Some(NewSessionDialog::new(
+                        self.available_tools.clone(),
+                        existing_titles,
+                        existing_groups,
+                        self.storage.profile(),
+                    ));
+                }
+            }
+            KeyCode::Char('N') => {
+                if !self.search_matches.is_empty() {
+                    self.search_match_index = if self.search_match_index == 0 {
+                        self.search_matches.len() - 1
+                    } else {
+                        self.search_match_index - 1
+                    };
+                    self.cursor = self.search_matches[self.search_match_index];
+                    self.update_selected();
+                }
             }
             KeyCode::Char('s') => {
                 // Open settings view with selected session's project path (if any)
@@ -399,6 +456,19 @@ impl HomeView {
                             "Error",
                             &format!("Failed to open diff view: {}", e),
                         ));
+                    }
+                }
+            }
+            KeyCode::Char('x') => {
+                if let Some(session_id) = &self.selected_session {
+                    if let Some(inst) = self.instance_map.get(session_id) {
+                        if inst.status == Status::Stopped || inst.status == Status::Deleting {
+                            return None;
+                        }
+                        let message = format!("Are you sure you want to stop '{}'?", inst.title);
+                        self.pending_stop_session = Some(session_id.clone());
+                        self.confirm_dialog =
+                            Some(ConfirmDialog::new("Stop Session", &message, "stop_session"));
                     }
                 }
             }
@@ -483,8 +553,8 @@ impl HomeView {
             KeyCode::Char('o') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.sort_order = self.sort_order.cycle_reverse();
                 self.flat_items = flatten_tree(&self.group_tree, &self.instances, self.sort_order);
-                if self.filtered_items.is_some() {
-                    self.update_filter();
+                if self.search_active && !self.search_query.value().is_empty() {
+                    self.update_search();
                 } else {
                     self.cursor = self.cursor.min(self.flat_items.len().saturating_sub(1));
                     self.update_selected();
@@ -500,8 +570,8 @@ impl HomeView {
             KeyCode::Char('o') => {
                 self.sort_order = self.sort_order.cycle();
                 self.flat_items = flatten_tree(&self.group_tree, &self.instances, self.sort_order);
-                if self.filtered_items.is_some() {
-                    self.update_filter();
+                if self.search_active && !self.search_query.value().is_empty() {
+                    self.update_search();
                 } else {
                     self.cursor = self.cursor.min(self.flat_items.len().saturating_sub(1));
                     self.update_selected();
@@ -598,20 +668,14 @@ impl HomeView {
     }
 
     pub(super) fn move_cursor(&mut self, delta: i32) {
-        let items = if let Some(ref filtered) = self.filtered_items {
-            filtered.len()
-        } else {
-            self.flat_items.len()
-        };
-
-        if items == 0 {
+        if self.flat_items.is_empty() {
             return;
         }
 
         let new_cursor = if delta < 0 {
             self.cursor.saturating_sub((-delta) as usize)
         } else {
-            (self.cursor + delta as usize).min(items - 1)
+            (self.cursor + delta as usize).min(self.flat_items.len() - 1)
         };
 
         self.cursor = new_cursor;
@@ -619,23 +683,15 @@ impl HomeView {
     }
 
     pub(super) fn update_selected(&mut self) {
-        let item_idx = if let Some(ref filtered) = self.filtered_items {
-            filtered.get(self.cursor).copied()
-        } else {
-            Some(self.cursor)
-        };
-
-        if let Some(idx) = item_idx {
-            if let Some(item) = self.flat_items.get(idx) {
-                match item {
-                    Item::Session { id, .. } => {
-                        self.selected_session = Some(id.clone());
-                        self.selected_group = None;
-                    }
-                    Item::Group { path, .. } => {
-                        self.selected_session = None;
-                        self.selected_group = Some(path.clone());
-                    }
+        if let Some(item) = self.flat_items.get(self.cursor) {
+            match item {
+                Item::Session { id, .. } => {
+                    self.selected_session = Some(id.clone());
+                    self.selected_group = None;
+                }
+                Item::Group { path, .. } => {
+                    self.selected_session = None;
+                    self.selected_group = Some(path.clone());
                 }
             }
         }
@@ -652,38 +708,111 @@ impl HomeView {
         }
     }
 
-    pub(super) fn update_filter(&mut self) {
-        if self.search_query.value().is_empty() {
-            self.filtered_items = None;
+    /// Re-score matches after a reload without moving the cursor.
+    pub(super) fn refresh_search_matches(&mut self) {
+        let query = self.search_query.value();
+        if query.is_empty() {
+            self.search_matches.clear();
+            self.search_match_index = 0;
             return;
         }
 
-        let query = self.search_query.value().to_lowercase();
-        let mut matches = Vec::new();
+        use nucleo_matcher::pattern::{Atom, AtomKind, CaseMatching, Normalization};
+        use nucleo_matcher::{Config, Matcher, Utf32Str};
+
+        let mut matcher = Matcher::new(Config::DEFAULT.match_paths());
+        let atom = Atom::new(
+            query,
+            CaseMatching::Ignore,
+            Normalization::Smart,
+            AtomKind::Fuzzy,
+            false,
+        );
+
+        let mut scored: Vec<(usize, u16)> = Vec::new();
+        let mut buf = Vec::new();
 
         for (idx, item) in self.flat_items.iter().enumerate() {
-            match item {
+            let haystack = match item {
                 Item::Session { id, .. } => {
                     if let Some(inst) = self.instance_map.get(id) {
-                        if inst.title_lower.contains(&query)
-                            || inst.project_path_lower.contains(&query)
-                        {
-                            matches.push(idx);
-                        }
+                        format!("{} {}", inst.title, inst.project_path)
+                    } else {
+                        continue;
                     }
                 }
                 Item::Group { name, path, .. } => {
-                    if name.to_lowercase().contains(&query) || path.to_lowercase().contains(&query)
-                    {
-                        matches.push(idx);
-                    }
+                    format!("{} {}", name, path)
                 }
+            };
+
+            let haystack_utf32 = Utf32Str::new(&haystack, &mut buf);
+            if let Some(score) = atom.score(haystack_utf32, &mut matcher) {
+                scored.push((idx, score));
             }
         }
 
-        self.filtered_items = Some(matches);
-        self.cursor = 0;
-        self.update_selected();
+        scored.sort_by(|a, b| b.1.cmp(&a.1));
+        self.search_matches = scored.into_iter().map(|(idx, _)| idx).collect();
+        // Clamp match_index in case matches shrank
+        if self.search_matches.is_empty() {
+            self.search_match_index = 0;
+        } else if self.search_match_index >= self.search_matches.len() {
+            self.search_match_index = self.search_matches.len() - 1;
+        }
+    }
+
+    pub(super) fn update_search(&mut self) {
+        self.search_matches.clear();
+        self.search_match_index = 0;
+
+        let query = self.search_query.value();
+        if query.is_empty() {
+            return;
+        }
+
+        use nucleo_matcher::pattern::{Atom, AtomKind, CaseMatching, Normalization};
+        use nucleo_matcher::{Config, Matcher, Utf32Str};
+
+        let mut matcher = Matcher::new(Config::DEFAULT.match_paths());
+        let atom = Atom::new(
+            query,
+            CaseMatching::Ignore,
+            Normalization::Smart,
+            AtomKind::Fuzzy,
+            false,
+        );
+
+        let mut scored: Vec<(usize, u16)> = Vec::new();
+        let mut buf = Vec::new();
+
+        for (idx, item) in self.flat_items.iter().enumerate() {
+            let haystack = match item {
+                Item::Session { id, .. } => {
+                    if let Some(inst) = self.instance_map.get(id) {
+                        format!("{} {}", inst.title, inst.project_path)
+                    } else {
+                        continue;
+                    }
+                }
+                Item::Group { name, path, .. } => {
+                    format!("{} {}", name, path)
+                }
+            };
+
+            let haystack_utf32 = Utf32Str::new(&haystack, &mut buf);
+            if let Some(score) = atom.score(haystack_utf32, &mut matcher) {
+                scored.push((idx, score));
+            }
+        }
+
+        scored.sort_by(|a, b| b.1.cmp(&a.1));
+        self.search_matches = scored.into_iter().map(|(idx, _)| idx).collect();
+
+        if let Some(&best) = self.search_matches.first() {
+            self.cursor = best;
+            self.update_selected();
+        }
     }
 
     /// Create a session with optional hooks. Delegates to the background

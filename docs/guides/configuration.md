@@ -37,11 +37,22 @@ All settings below can also be edited from the TUI settings screen (press `s` or
 | `AGENT_OF_EMPIRES_PROFILE` | Default profile to use |
 | `AGENT_OF_EMPIRES_DEBUG` | Enable debug logging (`1` to enable) |
 
+## Theme
+
+```toml
+[theme]
+name = "phosphor"   # phosphor, tokyo-night-storm, catppuccin-latte
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `name` | `"phosphor"` | TUI color theme. Available: `phosphor` (default green), `tokyo-night-storm` (dark blue/purple), `catppuccin-latte` (light pastel). |
+
 ## Session
 
 ```toml
 [session]
-default_tool = "claude"   # claude, opencode, vibe, codex, gemini
+default_tool = "claude"   # claude, opencode, vibe, codex, gemini, cursor
 yolo_mode_default = false
 ```
 

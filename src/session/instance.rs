@@ -32,6 +32,7 @@ pub enum Status {
     Waiting,
     #[default]
     Idle,
+    Stopped,
     Error,
     Starting,
     Deleting,
@@ -107,12 +108,6 @@ pub struct Instance {
     pub last_start_time: Option<std::time::Instant>,
     #[serde(skip)]
     pub last_error: Option<String>,
-
-    // Search optimization: pre-computed lowercase strings (not serialized)
-    #[serde(skip)]
-    pub title_lower: String,
-    #[serde(skip)]
-    pub project_path_lower: String,
 }
 
 impl Instance {
@@ -135,16 +130,7 @@ impl Instance {
             last_error_check: None,
             last_start_time: None,
             last_error: None,
-            title_lower: title.to_lowercase(),
-            project_path_lower: project_path.to_lowercase(),
         }
-    }
-
-    /// Update the pre-computed lowercase fields for search optimization.
-    /// Call this after loading instances from disk or modifying title/path.
-    pub fn update_search_cache(&mut self) {
-        self.title_lower = self.title.to_lowercase();
-        self.project_path_lower = self.project_path.to_lowercase();
     }
 
     pub fn is_sub_session(&self) -> bool {
@@ -547,7 +533,26 @@ impl Instance {
         Ok(())
     }
 
+    /// Stop the session: kill the tmux session and stop the Docker container
+    /// (if sandboxed). The container is stopped but not removed, so it can be
+    /// restarted on re-attach.
+    pub fn stop(&self) -> Result<()> {
+        self.kill()?;
+
+        if self.is_sandboxed() {
+            let container = containers::DockerContainer::from_session_id(&self.id);
+            if container.is_running().unwrap_or(false) {
+                container.stop()?;
+            }
+        }
+        Ok(())
+    }
+
     pub fn update_status(&mut self) {
+        if self.status == Status::Stopped {
+            return;
+        }
+
         // Skip expensive checks for recently errored sessions
         if self.status == Status::Error {
             if let Some(last_check) = self.last_error_check {
@@ -752,25 +757,6 @@ mod tests {
         assert_eq!(inst.get_tool_command(), "claude --resume abc123");
     }
 
-    // Tests for update_search_cache
-    #[test]
-    fn test_update_search_cache() {
-        let mut inst = Instance::new("Test Title", "/Path/To/Project");
-        // Manually modify title
-        inst.title = "New Title".to_string();
-        inst.project_path = "/New/Path".to_string();
-
-        // Cache is stale
-        assert_ne!(inst.title_lower, "new title");
-        assert_ne!(inst.project_path_lower, "/new/path");
-
-        // Update cache
-        inst.update_search_cache();
-
-        assert_eq!(inst.title_lower, "new title");
-        assert_eq!(inst.project_path_lower, "/new/path");
-    }
-
     // Tests for Status enum
     #[test]
     fn test_status_default() {
@@ -784,6 +770,7 @@ mod tests {
             Status::Running,
             Status::Waiting,
             Status::Idle,
+            Status::Stopped,
             Status::Error,
             Status::Starting,
             Status::Deleting,

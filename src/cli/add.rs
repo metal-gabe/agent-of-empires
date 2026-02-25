@@ -22,7 +22,7 @@ pub struct AddArgs {
     #[arg(short = 'g', long)]
     group: Option<String>,
 
-    /// Command to run (e.g., 'claude', 'opencode', 'vibe', 'codex', 'gemini')
+    /// Command to run (e.g., 'claude', 'opencode', 'vibe', 'codex', 'gemini', 'cursor')
     #[arg(short = 'c', long = "cmd")]
     command: Option<String>,
 
@@ -167,8 +167,14 @@ pub async fn run(profile: &str, args: AddArgs) -> Result<()> {
     }
 
     if let Some(cmd) = &args.command {
-        instance.command = cmd.clone();
-        instance.tool = detect_tool(cmd)?;
+        let tool_name = detect_tool(cmd)?;
+        instance.tool = tool_name;
+        // Only store a custom command when the user passed extra args
+        // (e.g. "claude --resume xyz"). A bare tool name/alias should resolve
+        // through the agent definition so the correct binary is used.
+        if cmd.trim().contains(' ') {
+            instance.command = cmd.clone();
+        }
     }
 
     if let Some(worktree_info) = worktree_info_opt {

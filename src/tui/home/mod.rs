@@ -85,6 +85,7 @@ pub(super) const ICON_WAITING: &str = "◐";
 pub(super) const ICON_IDLE: &str = "○";
 pub(super) const ICON_ERROR: &str = "✕";
 pub(super) const ICON_STARTING: &str = "◌";
+pub(super) const ICON_STOPPED: &str = "■";
 pub(super) const ICON_DELETING: &str = "✗";
 pub(super) const ICON_COLLAPSED: &str = "▶";
 pub(super) const ICON_EXPANDED: &str = "▼";
@@ -119,11 +120,14 @@ pub struct HomeView {
     pub(super) info_dialog: Option<InfoDialog>,
     /// Session to attach after the custom instruction warning dialog is dismissed
     pub(super) pending_attach_after_warning: Option<String>,
+    /// Session to stop after the confirmation dialog is accepted
+    pub(super) pending_stop_session: Option<String>,
 
     // Search
     pub(super) search_active: bool,
     pub(super) search_query: Input,
-    pub(super) filtered_items: Option<Vec<usize>>,
+    pub(super) search_matches: Vec<usize>,
+    pub(super) search_match_index: usize,
 
     // Tool availability
     pub(super) available_tools: AvailableTools,
@@ -169,11 +173,7 @@ pub struct HomeView {
 
 impl HomeView {
     pub fn new(storage: Storage, available_tools: AvailableTools) -> anyhow::Result<Self> {
-        let (mut instances, groups) = storage.load_with_groups()?;
-
-        for inst in &mut instances {
-            inst.update_search_cache();
-        }
+        let (instances, groups) = storage.load_with_groups()?;
 
         let instance_map: HashMap<String, Instance> = instances
             .iter()
@@ -226,9 +226,11 @@ impl HomeView {
             changelog_dialog: None,
             info_dialog: None,
             pending_attach_after_warning: None,
+            pending_stop_session: None,
             search_active: false,
             search_query: Input::default(),
-            filtered_items: None,
+            search_matches: Vec::new(),
+            search_match_index: 0,
             available_tools,
             status_poller: StatusPoller::new(),
             pending_status_refresh: false,
@@ -264,7 +266,6 @@ impl HomeView {
                 inst.last_error_check = prev.last_error_check;
                 inst.last_start_time = prev.last_start_time;
             }
-            inst.update_search_cache();
         }
 
         self.instances = instances;
@@ -279,6 +280,13 @@ impl HomeView {
 
         if self.cursor >= self.flat_items.len() && !self.flat_items.is_empty() {
             self.cursor = self.flat_items.len() - 1;
+        }
+
+        if self.search_active && !self.search_query.value().is_empty() {
+            self.update_search();
+        } else if !self.search_matches.is_empty() {
+            // Recalculate match indices without moving the cursor
+            self.refresh_search_matches();
         }
 
         self.update_selected();
@@ -303,7 +311,7 @@ impl HomeView {
         if let Some(updates) = self.status_poller.try_recv_updates() {
             for update in updates {
                 if let Some(inst) = self.instances.iter_mut().find(|i| i.id == update.id) {
-                    if inst.status != Status::Deleting {
+                    if inst.status != Status::Deleting && inst.status != Status::Stopped {
                         let old_status = inst.status;
                         inst.status = update.status;
                         inst.last_error = update.last_error.clone();
@@ -317,7 +325,7 @@ impl HomeView {
                     }
                 }
                 if let Some(inst) = self.instance_map.get_mut(&update.id) {
-                    if inst.status != Status::Deleting {
+                    if inst.status != Status::Deleting && inst.status != Status::Stopped {
                         inst.status = update.status;
                         inst.last_error = update.last_error;
                     }
@@ -544,6 +552,21 @@ impl HomeView {
         let current_idx = profiles.iter().position(|p| p == current).unwrap_or(0);
         let next_idx = (current_idx + 1) % profiles.len();
         Some(profiles[next_idx].clone())
+    }
+
+    pub fn set_instance_status(&mut self, id: &str, status: crate::session::Status) {
+        if let Some(inst) = self.instance_map.get_mut(id) {
+            inst.status = status;
+        }
+        if let Some(inst) = self.instances.iter_mut().find(|i| i.id == id) {
+            inst.status = status;
+        }
+    }
+
+    pub fn save(&self) -> anyhow::Result<()> {
+        self.storage
+            .save_with_groups(&self.instances, &self.group_tree)?;
+        Ok(())
     }
 
     pub fn set_instance_error(&mut self, id: &str, error: Option<String>) {
