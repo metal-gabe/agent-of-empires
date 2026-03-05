@@ -245,9 +245,9 @@ impl Instance {
         // Get workspace path inside container (handles bare repo worktrees correctly)
         let container_workdir = self.container_workdir();
 
-        let cmd = format!(
-            "{} /bin/bash",
-            container.exec_command(Some(&format!("-w {} {}", container_workdir, env_part)))
+        let cmd = container.exec_command(
+            Some(&format!("-w {} {}", container_workdir, env_part)),
+            "/bin/bash",
         );
 
         let session = self.container_terminal_tmux_session()?;
@@ -401,11 +401,9 @@ impl Instance {
             } else {
                 format!("{} ", env_args)
             };
-            Some(wrap_command_ignore_suspend(&format!(
-                "{} {}",
-                container.exec_command(Some(&env_part)),
-                tool_cmd
-            )))
+            Some(wrap_command_ignore_suspend(
+                &container.exec_command(Some(&env_part), &tool_cmd),
+            ))
         } else {
             // Run on_launch hooks on host for non-sandboxed sessions
             if let Some(ref hook_cmds) = on_launch_hooks {
