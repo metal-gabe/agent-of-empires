@@ -63,7 +63,7 @@ body {
 .feature-card {
   background: linear-gradient(180deg, rgba(30, 41, 59, 0.5) 0%, rgba(15, 23, 42, 0.3) 100%);
   border: 1px solid rgba(51, 65, 85, 0.5);
-  transition: all 0.3s ease;
+  transition: border-color 0.3s ease, background 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
 }
 
 .feature-card:hover {
@@ -156,7 +156,7 @@ kbd {
   font-weight: 600;
   padding: 0.875rem 2rem;
   border-radius: 0.75rem;
-  transition: all 0.3s ease;
+  transition: background-position 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
   box-shadow: 0 4px 14px -2px rgba(217, 119, 6, 0.4);
 }
 
@@ -178,7 +178,7 @@ kbd {
   padding: 0.875rem 2rem;
   border-radius: 0.75rem;
   border: 1px solid #334155;
-  transition: all 0.3s ease;
+  transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
 }
 
 .btn-secondary:hover {
@@ -210,6 +210,36 @@ kbd {
 .animate-on-scroll.delay-300 { transition-delay: 0.3s; }
 .animate-on-scroll.delay-400 { transition-delay: 0.4s; }
 
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .hero-gradient-animated { animation: none; }
+  .animate-on-scroll {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .feature-card,
+  .btn-primary,
+  .btn-secondary {
+    transition: none;
+  }
+  .feature-card:hover {
+    transform: none;
+  }
+  .btn-primary:hover,
+  .btn-secondary:hover {
+    transform: none;
+  }
+}
+
+
+/* Focus visibility for all interactive elements */
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid #fbbf24;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
 
 /* Callout */
 .callout {
@@ -519,7 +549,7 @@ kbd {
 .docs-content {
   flex: 1;
   min-width: 0;
-  max-width: 52rem;
+  max-width: 45rem;
   padding: 2rem 3rem 4rem;
 }
 
