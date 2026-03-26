@@ -20,147 +20,136 @@ pub const SESSION_PREFIX: &str = "aoe_";
 pub const TERMINAL_PREFIX: &str = "aoe_term_";
 pub const CONTAINER_TERMINAL_PREFIX: &str = "aoe_cterm_";
 
-static SESSION_CACHE: RwLock<SessionCache> = RwLock::new(SessionCache {
-    data: None,
-    time: None,
-});
+static SESSION_CACHE: RwLock<SessionCache> = RwLock::new(SessionCache { data: None, time: None });
 
 struct SessionCache {
-    data: Option<HashMap<String, i64>>,
-    time: Option<Instant>,
+   data: Option<HashMap<String, i64>>,
+   time: Option<Instant>,
 }
 
 pub fn refresh_session_cache() {
-    let output = Command::new("tmux")
-        .args([
-            "list-sessions",
-            "-F",
-            "#{session_name}\t#{session_activity}",
-        ])
-        .output();
+   let output = Command::new("tmux")
+      .args(["list-sessions", "-F", "#{session_name}\t#{session_activity}"])
+      .output();
 
-    let new_data = match output {
-        Ok(out) if out.status.success() => {
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            let mut map = HashMap::new();
-            for line in stdout.lines() {
-                if let Some((name, activity)) = line.split_once('\t') {
-                    let activity: i64 = activity.parse().unwrap_or(0);
-                    map.insert(name.to_string(), activity);
-                }
+   let new_data = match output {
+      Ok(out) if out.status.success() => {
+         let stdout = String::from_utf8_lossy(&out.stdout);
+         let mut map = HashMap::new();
+         for line in stdout.lines() {
+            if let Some((name, activity)) = line.split_once('\t') {
+               let activity: i64 = activity.parse().unwrap_or(0);
+               map.insert(name.to_string(), activity);
             }
-            Some(map)
-        }
-        _ => None,
-    };
+         }
+         Some(map)
+      },
+      _ => None,
+   };
 
-    if let Ok(mut cache) = SESSION_CACHE.write() {
-        cache.data = new_data;
-        cache.time = Some(Instant::now());
-    }
+   if let Ok(mut cache) = SESSION_CACHE.write() {
+      cache.data = new_data;
+      cache.time = Some(Instant::now());
+   }
 }
 
 pub fn session_exists_from_cache(name: &str) -> Option<bool> {
-    let cache = SESSION_CACHE.read().ok()?;
+   let cache = SESSION_CACHE.read().ok()?;
 
-    // Cache valid for 2 seconds
-    if cache
-        .time
-        .map(|t| t.elapsed() > Duration::from_secs(2))
-        .unwrap_or(true)
-    {
-        return None;
-    }
+   // Cache valid for 2 seconds
+   if cache.time.map(|t| t.elapsed() > Duration::from_secs(2)).unwrap_or(true) {
+      return None;
+   }
 
-    cache.data.as_ref().map(|m| m.contains_key(name))
+   cache.data.as_ref().map(|m| m.contains_key(name))
 }
 
 pub fn get_current_session_name() -> Option<String> {
-    let output = Command::new("tmux")
-        .args(["display-message", "-p", "#{session_name}"])
-        .output()
-        .ok()?;
+   let output = Command::new("tmux")
+      .args(["display-message", "-p", "#{session_name}"])
+      .output()
+      .ok()?;
 
-    if output.status.success() {
-        let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !name.is_empty() {
-            return Some(name);
-        }
-    }
-    None
+   if output.status.success() {
+      let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
+      if !name.is_empty() {
+         return Some(name);
+      }
+   }
+   None
 }
 
 pub fn is_tmux_available() -> bool {
-    Command::new("tmux").arg("-V").output().is_ok()
+   Command::new("tmux").arg("-V").output().is_ok()
 }
 
 fn is_agent_available(agent: &crate::agents::AgentDef) -> bool {
-    use crate::agents::DetectionMethod;
-    match &agent.detection {
-        DetectionMethod::Which(binary) => {
-            // First try direct `which` (fast path).
-            let direct = Command::new("which")
-                .arg(binary)
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false);
-            if direct {
-                return true;
-            }
-            // Fall back to a login shell so version-manager PATHs (NVM, etc.) are loaded.
-            let shell = crate::session::user_shell();
-            Command::new(&shell)
-                .args(["-lc", &format!("which {}", binary)])
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false)
-        }
-        DetectionMethod::RunWithArg(binary, arg) => {
-            if Command::new(binary)
-                .arg(arg)
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false)
-            {
-                return true;
-            }
-            let shell = crate::session::user_shell();
-            Command::new(&shell)
-                .args(["-lc", &format!("{} {}", binary, arg)])
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false)
-        }
-    }
+   use crate::agents::DetectionMethod;
+   match &agent.detection {
+      DetectionMethod::Which(binary) => {
+         // First try direct `which` (fast path).
+         let direct = Command::new("which")
+            .arg(binary)
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+         if direct {
+            return true;
+         }
+         // Fall back to a login shell so version-manager PATHs (NVM, etc.) are loaded.
+         let shell = crate::session::user_shell();
+         Command::new(&shell)
+            .args(["-lc", &format!("which {}", binary)])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+      },
+      DetectionMethod::RunWithArg(binary, arg) => {
+         if Command::new(binary)
+            .arg(arg)
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+         {
+            return true;
+         }
+         let shell = crate::session::user_shell();
+         Command::new(&shell)
+            .args(["-lc", &format!("{} {}", binary, arg)])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+      },
+   }
 }
 
 #[derive(Debug, Clone)]
 pub struct AvailableTools {
-    available: Vec<&'static str>,
+   available: Vec<&'static str>,
 }
 
 impl AvailableTools {
-    pub fn detect() -> Self {
-        let available = crate::agents::AGENTS
-            .iter()
-            .filter(|a| is_agent_available(a))
-            .map(|a| a.name)
-            .collect();
-        Self { available }
-    }
+   pub fn detect() -> Self {
+      let available = crate::agents::AGENTS
+         .iter()
+         .filter(|a| is_agent_available(a))
+         .map(|a| a.name)
+         .collect();
+      Self { available }
+   }
 
-    pub fn any_available(&self) -> bool {
-        !self.available.is_empty()
-    }
+   pub fn any_available(&self) -> bool {
+      !self.available.is_empty()
+   }
 
-    pub fn available_list(&self) -> Vec<&'static str> {
-        self.available.clone()
-    }
+   pub fn available_list(&self) -> Vec<&'static str> {
+      self.available.clone()
+   }
 
-    #[cfg(test)]
-    pub fn with_tools(tools: &[&'static str]) -> Self {
-        Self {
-            available: tools.to_vec(),
-        }
-    }
+   #[cfg(test)]
+   pub fn with_tools(tools: &[&'static str]) -> Self {
+      Self {
+         available: tools.to_vec(),
+      }
+   }
 }
