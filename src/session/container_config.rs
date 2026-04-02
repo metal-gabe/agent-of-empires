@@ -261,6 +261,90 @@ fn sync_agent_config(
     Ok(())
 }
 
+fn rewrite_claude_plugin_paths(sandbox_dir: &Path, host_home: &Path) -> Result<()> {
+    const CONTAINER_HOME: &str = "/root";
+
+    let plugins_dir = sandbox_dir.join("plugins");
+    if !plugins_dir.exists() {
+        return Ok(());
+    }
+
+    let host_home_str = host_home.to_string_lossy();
+    let targets = [
+        plugins_dir.join("known_marketplaces.json"),
+        plugins_dir.join("installed_plugins.json"),
+        plugins_dir
+            .join("marketplaces")
+            .join("known_marketplaces.json"),
+        plugins_dir
+            .join("marketplaces")
+            .join("installed_plugins.json"),
+    ];
+
+    for path in targets {
+        if !path.exists() {
+            continue;
+        }
+
+        let content = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!("Failed to read {}: {}", path.display(), e);
+                continue;
+            }
+        };
+
+        let mut value: serde_json::Value = match serde_json::from_str(&content) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!("Failed to parse {}: {}", path.display(), e);
+                continue;
+            }
+        };
+
+        let mut changed = false;
+        rewrite_plugin_value_paths(&mut value, &host_home_str, CONTAINER_HOME, &mut changed);
+
+        if changed {
+            let serialized = serde_json::to_string(&value)?;
+            if let Err(e) = std::fs::write(&path, serialized) {
+                tracing::warn!("Failed to write {}: {}", path.display(), e);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn rewrite_plugin_value_paths(
+    value: &mut serde_json::Value,
+    host_home: &str,
+    container_home: &str,
+    changed: &mut bool,
+) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, val) in map.iter_mut() {
+                if key == "installLocation" || key == "installPath" {
+                    if let serde_json::Value::String(path) = val {
+                        if path.starts_with(host_home) {
+                            *path = format!("{}{}", container_home, &path[host_home.len()..]);
+                            *changed = true;
+                        }
+                    }
+                }
+                rewrite_plugin_value_paths(val, host_home, container_home, changed);
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for val in values {
+                rewrite_plugin_value_paths(val, host_home, container_home, changed);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Recursively copy a directory tree, following symlinks.
 fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<()> {
     std::fs::create_dir_all(dest)?;
@@ -398,6 +482,16 @@ fn prepare_sandbox_dir(mount: &AgentConfigMount, home: &Path) -> Result<std::pat
             mount.copy_dirs,
             mount.preserve_files,
         )?;
+
+        if mount.tool_name == "claude" {
+            if let Err(e) = rewrite_claude_plugin_paths(&sandbox_dir, home) {
+                tracing::warn!(
+                    "Failed to rewrite Claude plugin paths in {}: {}",
+                    sandbox_dir.display(),
+                    e
+                );
+            }
+        }
 
         if let Some((service, filename)) = mount.keychain_credential {
             if let Err(e) = extract_keychain_credential(service, &sandbox_dir.join(filename)) {
@@ -1384,6 +1478,43 @@ mod tests {
     }
 
     #[test]
+    fn test_rewrites_claude_plugin_paths_to_container_home() {
+        let dir = TempDir::new().unwrap();
+        let host_home = dir.path().join("home");
+        let host = host_home.join(".claude");
+        fs::create_dir_all(host.join("plugins")).unwrap();
+
+        let known = format!(
+            r#"{{"installLocation":"{}/.claude/plugins/marketplaces/claude-plugins-official"}}"#,
+            host_home.display()
+        );
+        fs::write(host.join("plugins/known_marketplaces.json"), known).unwrap();
+
+        let installed = format!(
+            r#"{{"rust-analyzer-lsp":{{"installPath":"{}/.claude/plugins/cache/claude-plugins-official/rust-analyzer-lsp/1.0.0"}}}}"#,
+            host_home.display()
+        );
+        fs::write(host.join("plugins/installed_plugins.json"), installed).unwrap();
+
+        let sandbox = dir.path().join("sandbox");
+        sync_agent_config(&host, &sandbox, &[], &[], &["plugins"], &[]).unwrap();
+        rewrite_claude_plugin_paths(&sandbox, &host_home).unwrap();
+
+        let host_prefix = host_home.to_string_lossy();
+        let known_out =
+            fs::read_to_string(sandbox.join("plugins/known_marketplaces.json")).unwrap();
+        assert!(known_out.contains("/root/.claude/plugins/marketplaces/claude-plugins-official"));
+        assert!(!known_out.contains(host_prefix.as_ref()));
+
+        let installed_out =
+            fs::read_to_string(sandbox.join("plugins/installed_plugins.json")).unwrap();
+        assert!(installed_out.contains(
+            "/root/.claude/plugins/cache/claude-plugins-official/rust-analyzer-lsp/1.0.0"
+        ));
+        assert!(!installed_out.contains(host_prefix.as_ref()));
+    }
+
+    #[test]
     fn test_agent_config_mounts_have_valid_entries() {
         for mount in AGENT_CONFIG_MOUNTS {
             assert!(!mount.tool_name.is_empty());
@@ -1581,6 +1712,55 @@ mod tests {
             .exists());
         // "subdir" is NOT in copy_dirs, so still skipped.
         assert!(!sandbox.join("subdir").exists());
+    }
+
+    #[test]
+    fn test_rewrite_claude_plugin_paths() {
+        let dir = TempDir::new().unwrap();
+        let host_home = dir.path().join("home");
+        fs::create_dir_all(&host_home).unwrap();
+
+        let sandbox = dir.path().join("sandbox");
+        let marketplaces = sandbox.join("plugins").join("marketplaces");
+        fs::create_dir_all(&marketplaces).unwrap();
+
+        let host_marketplace = format!(
+            "{}/.claude/plugins/marketplaces/claude-plugins-official",
+            host_home.display()
+        );
+        let known = format!(
+            r#"{{"marketplaces":[{{"installLocation":"{}"}}]}}"#,
+            host_marketplace
+        );
+        fs::write(marketplaces.join("known_marketplaces.json"), known).unwrap();
+
+        let host_install = format!(
+            "{}/.claude/plugins/cache/claude-plugins-official/rust-analyzer-lsp/1.0.0",
+            host_home.display()
+        );
+        let installed = format!(r#"{{"plugins":[{{"installPath":"{}"}}]}}"#, host_install);
+        fs::write(
+            sandbox.join("plugins").join("installed_plugins.json"),
+            installed,
+        )
+        .unwrap();
+
+        rewrite_claude_plugin_paths(&sandbox, &host_home).unwrap();
+
+        let known = fs::read_to_string(marketplaces.join("known_marketplaces.json")).unwrap();
+        let known_json: serde_json::Value = serde_json::from_str(&known).unwrap();
+        assert_eq!(
+            known_json["marketplaces"][0]["installLocation"],
+            "/root/.claude/plugins/marketplaces/claude-plugins-official"
+        );
+
+        let installed =
+            fs::read_to_string(sandbox.join("plugins").join("installed_plugins.json")).unwrap();
+        let installed_json: serde_json::Value = serde_json::from_str(&installed).unwrap();
+        assert_eq!(
+            installed_json["plugins"][0]["installPath"],
+            "/root/.claude/plugins/cache/claude-plugins-official/rust-analyzer-lsp/1.0.0"
+        );
     }
 
     #[test]
