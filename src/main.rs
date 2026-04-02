@@ -48,6 +48,19 @@ async fn main() -> Result<()> {
             };
         }
         Some(Commands::Sounds { command }) => return cli::sounds::run(command).await,
+        Some(Commands::Theme { command }) => {
+            use cli::theme::ThemeCommands;
+            return match command {
+                ThemeCommands::List => {
+                    cli::theme::run_list();
+                    Ok(())
+                }
+                ThemeCommands::Export { name, output } => {
+                    cli::theme::run_export(&name, output.as_deref())
+                }
+                ThemeCommands::Dir => cli::theme::run_dir(),
+            };
+        }
         Some(Commands::Uninstall(args)) => return cli::uninstall::run(args).await,
         _ => {}
     }

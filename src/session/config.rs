@@ -278,10 +278,13 @@ pub struct SandboxConfig {
     #[serde(default = "default_sandbox_image")]
     pub default_image: String,
 
-    #[serde(default)]
+    #[serde(default, deserialize_with = "super::serde_helpers::string_or_vec")]
     pub extra_volumes: Vec<String>,
 
-    #[serde(default = "default_sandbox_environment")]
+    #[serde(
+        default = "default_sandbox_environment",
+        deserialize_with = "super::serde_helpers::string_or_vec"
+    )]
     pub environment: Vec<String>,
 
     #[serde(default = "default_true")]
@@ -293,7 +296,11 @@ pub struct SandboxConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub memory_limit: Option<String>,
 
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        deserialize_with = "super::serde_helpers::string_or_vec"
+    )]
     pub port_mappings: Vec<String>,
 
     /// Default terminal mode for sandboxed sessions (host or container)
@@ -301,7 +308,7 @@ pub struct SandboxConfig {
     pub default_terminal_mode: DefaultTerminalMode,
 
     /// Relative directory paths to exclude from the host bind mount via anonymous volumes
-    #[serde(default)]
+    #[serde(default, deserialize_with = "super::serde_helpers::string_or_vec")]
     pub volume_ignores: Vec<String>,
 
     /// Mount ~/.ssh into sandbox containers (default: false)
@@ -682,6 +689,22 @@ mod tests {
             deserialized.sandbox.volume_ignores,
             vec!["target", "node_modules"]
         );
+    }
+
+    #[test]
+    fn test_sandbox_config_string_shorthand() {
+        // Regression test: all Vec<String> sandbox fields accept a plain string
+        let toml = r#"
+            environment = "ANTHROPIC_API_KEY"
+            extra_volumes = "/data:/data:ro"
+            volume_ignores = "node_modules"
+            port_mappings = "3000:3000"
+        "#;
+        let sb: SandboxConfig = toml::from_str(toml).unwrap();
+        assert_eq!(sb.environment, vec!["ANTHROPIC_API_KEY"]);
+        assert_eq!(sb.extra_volumes, vec!["/data:/data:ro"]);
+        assert_eq!(sb.volume_ignores, vec!["node_modules"]);
+        assert_eq!(sb.port_mappings, vec!["3000:3000"]);
     }
 
     // Tests for ClaudeConfig

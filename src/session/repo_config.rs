@@ -1,4 +1,4 @@
-//! Repository-level configuration (`.aoe/config.toml`)
+//! Repository-level configuration (`.agent-of-empires/config.toml`)
 //!
 //! Allows repos to define hooks and override session/sandbox/worktree settings.
 //! Settings that are personal/global (theme, updates, tmux, claude config_dir) are
@@ -26,7 +26,7 @@ use super::profile_config::{
     TmuxConfigOverride, UpdatesConfigOverride, WorktreeConfigOverride,
 };
 
-/// Repository-level configuration loaded from `.aoe/config.toml`.
+/// Repository-level configuration loaded from `.agent-of-empires/config.toml`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RepoConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -58,14 +58,25 @@ pub struct RepoConfig {
 /// - `on_launch`: failures are logged as warnings but do not prevent the session
 ///   from starting, since blocking an existing session on a transient hook failure
 ///   would be disruptive.
+///
+/// Both fields accept either a single string or an array of strings in TOML:
+///   `on_launch = "npm start"`  or  `on_launch = ["npm install", "npm start"]`
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct HooksConfig {
     /// Commands run once when a session is first created.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        deserialize_with = "super::serde_helpers::string_or_vec"
+    )]
     pub on_create: Vec<String>,
 
     /// Commands run every time a session starts (failures are non-fatal).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        deserialize_with = "super::serde_helpers::string_or_vec"
+    )]
     pub on_launch: Vec<String>,
 }
 
@@ -76,14 +87,31 @@ impl HooksConfig {
 }
 
 /// Path to the repo config file relative to the project root.
-const REPO_CONFIG_PATH: &str = ".aoe/config.toml";
+const REPO_CONFIG_PATH: &str = ".agent-of-empires/config.toml";
 
-/// Load repo config from `<project_path>/.aoe/config.toml`.
-/// Returns `None` if the file doesn't exist.
+/// Legacy path (pre-1.1) for backwards compatibility.
+const LEGACY_REPO_CONFIG_PATH: &str = ".aoe/config.toml";
+
+/// Load repo config from `<project_path>/.agent-of-empires/config.toml`.
+/// Falls back to the legacy `.aoe/config.toml` path with a deprecation warning.
+/// Returns `None` if neither file exists.
 pub fn load_repo_config(project_path: &Path) -> Result<Option<RepoConfig>> {
     let config_path = project_path.join(REPO_CONFIG_PATH);
-    if !config_path.exists() {
-        return Ok(None);
+    let (config_path, is_legacy) = if config_path.exists() {
+        (config_path, false)
+    } else {
+        let legacy_path = project_path.join(LEGACY_REPO_CONFIG_PATH);
+        if legacy_path.exists() {
+            (legacy_path, true)
+        } else {
+            return Ok(None);
+        }
+    };
+
+    if is_legacy {
+        tracing::warn!(
+            "Found repo config at legacy path .aoe/config.toml -- please rename to .agent-of-empires/config.toml"
+        );
     }
 
     let content = fs::read_to_string(&config_path)
@@ -99,14 +127,14 @@ pub fn load_repo_config(project_path: &Path) -> Result<Option<RepoConfig>> {
     Ok(Some(config))
 }
 
-/// Save repo config to `<project_path>/.aoe/config.toml`.
-/// Creates the `.aoe/` directory if it does not exist.
+/// Save repo config to `<project_path>/.agent-of-empires/config.toml`.
+/// Creates the `.agent-of-empires/` directory if it does not exist.
+/// If a legacy `.aoe/config.toml` exists, it is removed after a successful save
+/// to prevent stale config from silently reactivating.
 pub fn save_repo_config(project_path: &Path, config: &RepoConfig) -> Result<()> {
-    let aoe_dir = project_path.join(".aoe");
-    if !aoe_dir.exists() {
-        fs::create_dir_all(&aoe_dir)
-            .with_context(|| format!("Failed to create {}", aoe_dir.display()))?;
-    }
+    let config_dir = project_path.join(".agent-of-empires");
+    fs::create_dir_all(&config_dir)
+        .with_context(|| format!("Failed to create {}", config_dir.display()))?;
 
     let config_path = project_path.join(REPO_CONFIG_PATH);
     let content = toml::to_string_pretty(config)
@@ -114,6 +142,21 @@ pub fn save_repo_config(project_path: &Path, config: &RepoConfig) -> Result<()> 
 
     fs::write(&config_path, content)
         .with_context(|| format!("Failed to write {}", config_path.display()))?;
+
+    // Clean up legacy .aoe/config.toml to prevent stale config from reactivating
+    let legacy_config = project_path.join(LEGACY_REPO_CONFIG_PATH);
+    if legacy_config.exists() {
+        if let Err(e) = fs::remove_file(&legacy_config) {
+            tracing::warn!("Failed to remove legacy {}: {}", legacy_config.display(), e);
+        } else {
+            tracing::info!("Removed legacy .aoe/config.toml after migrating to .agent-of-empires/");
+        }
+        // Also remove the .aoe/ directory if it's now empty
+        let legacy_dir = project_path.join(".aoe");
+        if legacy_dir.exists() {
+            let _ = fs::remove_dir(&legacy_dir); // only succeeds if empty
+        }
+    }
 
     Ok(())
 }
@@ -706,6 +749,67 @@ mod tests {
         );
         assert_eq!(config.sandbox.unwrap().enabled_by_default, Some(true));
         assert_eq!(config.worktree.unwrap().enabled, Some(true));
+    }
+
+    #[test]
+    fn test_hooks_string_instead_of_array_parses_ok() {
+        // Regression test for #561: user writes on_launch as a plain string
+        // instead of an array. Previously this caused the entire RepoConfig to
+        // fail deserialization, silently dropping all settings including sandbox
+        // env vars. Now string_or_vec accepts both formats.
+        let toml = r#"
+            [sandbox]
+            environment = ["ANTHROPIC_API_KEY", "UV_LINK_MODE=copy", "CI=true"]
+
+            [hooks]
+            on_launch = "uv python install 3.11 && uv venv /opt/venv --python 3.11"
+        "#;
+
+        let config: RepoConfig = toml::from_str(toml).unwrap();
+        let hooks = config.hooks.unwrap();
+        assert_eq!(
+            hooks.on_launch,
+            vec!["uv python install 3.11 && uv venv /opt/venv --python 3.11"]
+        );
+        assert!(hooks.on_create.is_empty());
+
+        // Verify the sandbox config is also preserved
+        let sandbox = config.sandbox.unwrap();
+        assert_eq!(
+            sandbox.environment,
+            Some(vec![
+                "ANTHROPIC_API_KEY".to_string(),
+                "UV_LINK_MODE=copy".to_string(),
+                "CI=true".to_string(),
+            ])
+        );
+    }
+
+    #[test]
+    fn test_hooks_on_create_string_parses_ok() {
+        let toml = r#"
+            [hooks]
+            on_create = "npm install"
+        "#;
+
+        let config: RepoConfig = toml::from_str(toml).unwrap();
+        let hooks = config.hooks.unwrap();
+        assert_eq!(hooks.on_create, vec!["npm install"]);
+        assert!(hooks.on_launch.is_empty());
+    }
+
+    #[test]
+    fn test_hooks_array_still_works() {
+        let toml = r#"
+            [hooks]
+            on_create = ["npm install", "cp .env.example .env"]
+            on_launch = ["npm start"]
+        "#;
+
+        let config: RepoConfig = toml::from_str(toml).unwrap();
+        let hooks = config.hooks.unwrap();
+        assert_eq!(hooks.on_create, vec!["npm install", "cp .env.example .env"]);
+        assert_eq!(hooks.on_launch, vec!["npm start"]);
     }
 
     #[test]

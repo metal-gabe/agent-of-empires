@@ -16,6 +16,7 @@ use super::send::SendArgs;
 use super::session::SessionCommands;
 use super::sounds::SoundsCommands;
 use super::status::StatusArgs;
+use super::theme::ThemeCommands;
 use super::tmux::TmuxCommands;
 use super::uninstall::UninstallArgs;
 use super::worktree::WorktreeCommands;
@@ -45,7 +46,7 @@ pub enum Commands {
     /// Add a new session
     Add(AddArgs),
 
-    /// Initialize .aoe/config.toml in a repository
+    /// Initialize .agent-of-empires/config.toml in a repository
     Init(InitArgs),
 
     /// List all sessions
@@ -96,6 +97,12 @@ pub enum Commands {
     Sounds {
         #[command(subcommand)]
         command: SoundsCommands,
+    },
+
+    /// Manage color themes (list, export, customize)
+    Theme {
+        #[command(subcommand)]
+        command: ThemeCommands,
     },
 
     /// Uninstall Agent of Empires

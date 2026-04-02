@@ -1,6 +1,6 @@
 # Repository Configuration & Hooks
 
-AoE supports per-repo configuration via a `.aoe/config.toml` file in your project root. This lets you define project-specific defaults and hooks that apply to every team member using AoE on that repo.
+AoE supports per-repo configuration via a `.agent-of-empires/config.toml` file in your project root. This lets you define project-specific defaults and hooks that apply to every team member using AoE on that repo.
 
 ## Getting Started
 
@@ -10,7 +10,9 @@ Generate a template config:
 aoe init
 ```
 
-This creates `.aoe/config.toml` with commented-out examples. Edit the file to enable the settings you need.
+This creates `.agent-of-empires/config.toml` with commented-out examples. Edit the file to enable the settings you need.
+
+> **Migrating from `.aoe/`?** AoE still reads the legacy `.aoe/config.toml` path, but we recommend renaming it: `mv .aoe .agent-of-empires`. If both exist, `.agent-of-empires/` takes priority.
 
 ## Configuration Sections
 
@@ -25,6 +27,13 @@ on_create = ["npm install", "cp .env.example .env"]
 
 # Run every time a session starts (failures are logged but non-fatal)
 on_launch = ["npm install"]
+```
+
+For single commands, you can use a plain string instead of an array:
+
+```toml
+[hooks]
+on_launch = "npm install"
 ```
 
 **`on_create`** runs only once, when the session is first created. If any command fails, session creation is aborted. Use this for one-time setup like installing dependencies or generating config files.
@@ -59,6 +68,14 @@ auto_cleanup = true
 default_terminal_mode = "host"   # "host" or "container"
 ```
 
+List fields (`environment`, `volume_ignores`, `extra_volumes`, `port_mappings`) accept either an array or a single string:
+
+```toml
+[sandbox]
+environment = "ANTHROPIC_API_KEY"          # single value
+volume_ignores = ["node_modules", ".next"] # multiple values
+```
+
 ### Worktree
 
 Override worktree settings for this repo:
@@ -78,7 +95,7 @@ delete_branch_on_cleanup = false
 When AoE encounters hooks in a repo for the first time, it prompts you to review and approve them before execution. This prevents untrusted repos from running arbitrary commands.
 
 - Trust decisions are stored globally (shared across all profiles)
-- If hook commands change (e.g., someone updates `.aoe/config.toml`), AoE prompts for re-approval
+- If hook commands change (e.g., someone updates `.agent-of-empires/config.toml`), AoE prompts for re-approval
 - Use `--trust-hooks` with `aoe add` to skip the trust prompt (useful for CI or repos you control)
 
 ```bash
@@ -92,7 +109,7 @@ Settings are resolved in this order (later overrides earlier):
 
 1. **Global config** (`~/.agent-of-empires/config.toml`)
 2. **Profile config** (`~/.agent-of-empires/profiles/<name>/config.toml`)
-3. **Repo config** (`.aoe/config.toml`)
+3. **Repo config** (`.agent-of-empires/config.toml`)
 
 Only settings that are explicitly set in the repo config override the global/profile values. Unset fields inherit from the higher-level config.
 
@@ -118,4 +135,4 @@ enabled = true
 
 ## Checking Into Version Control
 
-The `.aoe/config.toml` file is meant to be committed to your repo so the entire team shares the same configuration. The hook trust system ensures that each developer explicitly approves hook commands before they run.
+The `.agent-of-empires/config.toml` file is meant to be committed to your repo so the entire team shares the same configuration. The hook trust system ensures that each developer explicitly approves hook commands before they run.
