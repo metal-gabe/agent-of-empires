@@ -38,7 +38,7 @@ fn shortcuts() -> Vec<(&'static str, Vec<(&'static str, &'static str)>)> {
                 ("x", "Stop session"),
                 ("d", "Delete session/group"),
                 ("r", "Rename session/move group"),
-                ("Shift+R", "Rename group in-place"),
+                ("R", "Rename group in-place"),
                 ("m", "Send message to agent"),
             ],
         ),
