@@ -25,6 +25,7 @@ import { Dashboard } from "./components/Dashboard";
 import { LoginPage } from "./components/LoginPage";
 import { AboutModal } from "./components/AboutModal";
 import { CommandPalette } from "./components/command-palette/CommandPalette";
+import { DisconnectBanner } from "./components/DisconnectBanner";
 
 export default function App() {
   const [loginRequired, setLoginRequired] = useState<boolean | null>(null);
@@ -425,6 +426,8 @@ function AppContent({ loginRequired, onLogout }: { loginRequired: boolean; onLog
         isOffline={!!error}
         onGoDashboard={handleGoDashboard}
       />
+
+      <DisconnectBanner />
 
       <div className="flex flex-1 min-h-0">
         <WorkspaceSidebar

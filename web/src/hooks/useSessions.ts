@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SessionResponse } from "../lib/types";
 import { fetchSessions } from "../lib/api";
+import { setServerDown } from "../lib/connectionState";
 
 const POLL_INTERVAL = 3000;
 
@@ -21,8 +22,10 @@ export function useSessions() {
     if (data !== null) {
       setSessions(data);
       setError(false);
+      setServerDown(false);
     } else {
       setError(true);
+      setServerDown(true);
     }
   }, []);
 
@@ -32,8 +35,10 @@ export function useSessions() {
       if (data !== null) {
         setSessions(data);
         setError(false);
+        setServerDown(false);
       } else {
         setError(true);
+        setServerDown(true);
       }
     });
 
@@ -43,8 +48,10 @@ export function useSessions() {
         if (data !== null) {
           setSessions(data);
           setError(false);
+          setServerDown(false);
         } else {
           setError(true);
+          setServerDown(true);
         }
       });
     }, POLL_INTERVAL);
