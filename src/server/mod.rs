@@ -146,6 +146,21 @@ impl TokenManager {
 
 // ── AppState ────────────────────────────────────────────────────────────────
 
+/// Per-profile cleanup defaults with a refresh timestamp. Re-resolved from
+/// disk after `CLEANUP_DEFAULTS_TTL`.
+pub struct CleanupDefaultsCache {
+    pub refreshed_at: std::time::Instant,
+    pub entries: std::collections::HashMap<String, api::CleanupDefaults>,
+}
+
+pub const CLEANUP_DEFAULTS_TTL: std::time::Duration = std::time::Duration::from_secs(30);
+
+impl CleanupDefaultsCache {
+    pub fn stale(&self) -> bool {
+        self.refreshed_at.elapsed() >= CLEANUP_DEFAULTS_TTL
+    }
+}
+
 /// Shared application state accessible by all request handlers.
 pub struct AppState {
     pub profile: String,
@@ -162,11 +177,9 @@ pub struct AppState {
     /// as many as the user has sessions.
     pub instance_locks: RwLock<std::collections::HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     /// Cached per-profile cleanup defaults for the delete dialog, with a
-    /// timestamp so we re-resolve after config changes. TTL: 30 seconds.
-    pub cleanup_defaults_cache: RwLock<(
-        std::time::Instant,
-        std::collections::HashMap<String, api::CleanupDefaults>,
-    )>,
+    /// timestamp so we re-resolve after config changes (see
+    /// `CLEANUP_DEFAULTS_TTL`).
+    pub cleanup_defaults_cache: RwLock<CleanupDefaultsCache>,
     /// Cached remote owner per repo path. Remote owners don't change, so
     /// entries live for the lifetime of the process.
     pub remote_owner_cache: RwLock<std::collections::HashMap<String, Option<String>>>,
@@ -256,10 +269,12 @@ pub async fn start_server(config: ServerConfig<'_>) -> anyhow::Result<()> {
         devices: RwLock::new(Vec::new()),
         behind_tunnel: remote,
         instance_locks: RwLock::new(std::collections::HashMap::new()),
-        cleanup_defaults_cache: RwLock::new((
-            std::time::Instant::now() - std::time::Duration::from_secs(60),
-            std::collections::HashMap::new(),
-        )),
+        cleanup_defaults_cache: RwLock::new(CleanupDefaultsCache {
+            // Seed with an already-stale timestamp so the first request
+            // forces a fresh resolve instead of handing out an empty map.
+            refreshed_at: std::time::Instant::now() - CLEANUP_DEFAULTS_TTL,
+            entries: std::collections::HashMap::new(),
+        }),
         remote_owner_cache: RwLock::new(std::collections::HashMap::new()),
     });
 
@@ -487,6 +502,34 @@ fn build_router(state: Arc<AppState>) -> Router {
         .with_state(state)
 }
 
+/// Content-Security-Policy for the dashboard.
+///
+/// - `default-src 'self'`: deny everything we don't explicitly allow.
+/// - `script-src 'self' 'wasm-unsafe-eval'`: wterm compiles WebAssembly;
+///   the `wasm-unsafe-eval` source is the CSP3 opt-in for WASM compilation.
+/// - `style-src 'self' 'unsafe-inline'`: React writes to element.style at
+///   runtime (terminal theme vars, font-size updates) and Tailwind v4 emits
+///   inline `<style>` blocks in dev. Blocking inline styles breaks wterm.
+/// - `img-src 'self' data: https://github.com https://avatars.githubusercontent.com`:
+///   repo-owner avatars are loaded from `github.com/{user}.png` which 302s
+///   to `avatars.githubusercontent.com`; CSP checks both URLs across the
+///   redirect, so both hosts must be allowed. `data:` covers inline icons.
+/// - `font-src 'self'`: Geist fonts are bundled under /fonts/.
+/// - `connect-src 'self' ws: wss:`: REST + PTY WebSocket to same origin.
+/// - `frame-ancestors 'none'`: CSP-native equivalent of X-Frame-Options.
+/// - `base-uri 'self'`, `form-action 'self'`, `object-src 'none'`: tighten
+///   the usual attack surfaces on injection bugs.
+const CSP: &str = "default-src 'self'; \
+    script-src 'self' 'wasm-unsafe-eval'; \
+    style-src 'self' 'unsafe-inline'; \
+    img-src 'self' data: https://github.com https://avatars.githubusercontent.com; \
+    font-src 'self'; \
+    connect-src 'self' ws: wss:; \
+    frame-ancestors 'none'; \
+    base-uri 'self'; \
+    form-action 'self'; \
+    object-src 'none'";
+
 /// Middleware that adds security headers to all responses.
 async fn security_headers(
     request: axum::extract::Request,
@@ -497,6 +540,7 @@ async fn security_headers(
     headers.insert("x-frame-options", "DENY".parse().unwrap());
     headers.insert("x-content-type-options", "nosniff".parse().unwrap());
     headers.insert("referrer-policy", "no-referrer".parse().unwrap());
+    headers.insert("content-security-policy", CSP.parse().unwrap());
     response
 }
 
@@ -807,6 +851,49 @@ mod tests {
         let mut v = [IpKind::Loopback, IpKind::Lan, IpKind::Tailscale];
         v.sort();
         assert_eq!(v, [IpKind::Tailscale, IpKind::Lan, IpKind::Loopback]);
+    }
+
+    #[test]
+    fn csp_parses_as_valid_header_value() {
+        // Catches typos that would make the header unparseable.
+        // security_headers() calls `.parse().unwrap()` at request time;
+        // this test surfaces any regression at `cargo test` time instead.
+        let parsed: axum::http::HeaderValue = CSP.parse().expect("CSP must parse");
+        let rendered = parsed.to_str().expect("CSP must be ASCII");
+        // Spot-check load-bearing directives so a future edit that
+        // accidentally drops one fails loudly.
+        for needle in [
+            "default-src 'self'",
+            "'wasm-unsafe-eval'",
+            "img-src 'self' data: https://github.com https://avatars.githubusercontent.com",
+            "connect-src 'self' ws: wss:",
+            "frame-ancestors 'none'",
+        ] {
+            assert!(
+                rendered.contains(needle),
+                "CSP is missing required directive fragment `{needle}`"
+            );
+        }
+    }
+
+    #[test]
+    fn cleanup_defaults_cache_stale_within_ttl_is_false() {
+        let cache = CleanupDefaultsCache {
+            refreshed_at: std::time::Instant::now(),
+            entries: std::collections::HashMap::new(),
+        };
+        assert!(!cache.stale());
+    }
+
+    #[test]
+    fn cleanup_defaults_cache_stale_past_ttl_is_true() {
+        let cache = CleanupDefaultsCache {
+            refreshed_at: std::time::Instant::now()
+                - CLEANUP_DEFAULTS_TTL
+                - std::time::Duration::from_millis(1),
+            entries: std::collections::HashMap::new(),
+        };
+        assert!(cache.stale());
     }
 
     #[tokio::test]
